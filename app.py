@@ -75,8 +75,8 @@ def obtener_datos_ticker(ticker_symbol):
     try:
         ticker = yf.Ticker(ticker_symbol)
         # Traemos historial de 6 meses para calcular las medias y RSI
-        df = ticker.history(period="6m")
-        if df.empty:
+        df = ticker.history(period="6mo")
+        if df.empty or len(df) < 15:
             return None
 
         precio_actual = df["Close"].iloc[-1]
@@ -126,7 +126,9 @@ def obtener_datos_ticker(ticker_symbol):
             "badge": badge_class,
             "nota": nota,
         }
-    except:
+   except Exception as e:
+        # Esto te mostrará en la consola si hay otro error oculto
+        print(f"Error procesando {ticker_symbol}: {e}")
         return None
 
 
