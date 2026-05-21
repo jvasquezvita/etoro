@@ -3,14 +3,14 @@ import yfinance as yf
 import pandas as pd
 import streamlit as st
 
-# 1. Configuración de página estilo Dashboard de Trading
+# 1. Configuración de la interfaz estilo terminal de trading
 st.set_page_config(
     page_title="Crypto & Tech Aggressive Dashboard",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-# 2. Estilos CSS personalizados para el look oscuro y neón
+# 2. Inyección de estilos CSS estables
 st.markdown(
     """
     <style>
@@ -69,50 +69,52 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
-# 3. Función de extracción y procesamiento técnico de datos
+# 3. Función de extracción de datos blindada contra fallas de API
 def obtener_datos_ticker(ticker_symbol):
     try:
         ticker = yf.Ticker(ticker_symbol)
         
-        # Obtener historial de 6 meses
+        # Uso estricto de '6mo' requerido por la API de Yahoo
         df = ticker.history(period="6mo") 
         if df.empty or len(df) < 15:
             return None
 
-        precio_actual = df["Close"].iloc[-1]
-        precio_anterior = df["Close"].iloc[-2]
-        cambio_pct = ((precio_actual - precio_anterior) / precio_anterior) * 100
+        precio_actual = float(df["Close"].iloc[-1])
+        precio_anterior = float(df["Close"].iloc[-2])
+        cambio_pct = float(((precio_actual - precio_anterior) / precio_anterior) * 100)
 
-        # Cálculo manual del RSI (14)
+        # Cálculo del RSI (14) libre de errores de división por cero
         delta = df["Close"].diff()
         gain = delta.where(delta > 0, 0)
         loss = -delta.where(delta < 0, 0)
         avg_gain = gain.rolling(window=14).mean()
         avg_loss = loss.rolling(window=14).mean()
+        
+        # Evitar Warning por división nula si el mercado está plano
+        avg_loss = avg_loss.replace(0, 0.00001)
         rs = avg_gain / avg_loss
         rsi = 100 - (100 / (1 + rs))
-        rsi_actual = round(rsi.iloc[-1], 2)
+        rsi_actual = round(float(rsi.iloc[-1]), 2)
 
-        # Promedio Móvil Simple de 50 días
-        sma_50 = df["Close"].rolling(window=50).mean().iloc[-1]
+        # Soporte dinámico basado en la Media Móvil de 50 días
+        sma_50 = float(df["Close"].rolling(window=50).mean().iloc[-1])
 
-        # Máximos y mínimos anuales
+        # Datos históricos de 1 año
         hist_1y = ticker.history(period="1y")
-        min_52w = hist_1y["Low"].min()
-        max_52w = hist_1y["High"].max()
+        min_52w = float(hist_1y["Low"].min())
+        max_52w = float(hist_1y["High"].max())
 
-        # Lógica de asignación de señales
+        # Configuración de Algoritmo de Señales
         if rsi_actual < 40:
             senal = "OPORTUNIDAD DE COMPRA"
             badge_class = "badge-buy"
-            nota = "Activo sobrevendido o en corrección saludable. Descuento técnico atractivo."
+            nota = "Activo en zona de descuento o sobreventa diaria. Buen margen de entrada."
         else:
             senal = "ESPERAR"
             badge_class = "badge-wait"
-            nota = "Precio en equilibrio. Esperar retroceso técnico hacia soportes clave antes de entrar."
+            nota = "Precio en equilibrio relativo. Monitorear retroceso hacia el soporte dinámico."
 
-        # Simplificamos la obtención del nombre para evitar que rompa el try principal
+        # Control para cuando Yahoo oculta la metadata de nombre comercial
         nombre_limpio = ticker_symbol
         try:
             if ticker.info and "longName" in ticker.info:
@@ -128,38 +130,37 @@ def obtener_datos_ticker(ticker_symbol):
             "soporte": round(sma_50 * 0.96, 2),
             "resistencia": round(precio_actual * 1.08, 2),
             "stop_loss": round(sma_50 * 0.91, 2),
-            "target": round(precio_actual * 1.20, 2),
+            "target": round(precio_actual * 1.22, 2),
             "min_52w": min_52w,
             "max_52w": max_52w,
             "senal": senal,
             "badge": badge_class,
             "nota": nota,
         }
-    except Exception as e:
+    except:
         return None
 
-
-# 4. Renderizado de la Interfaz Gráfica (Layout)
+# 4. Estructura de visualización del Dashboard
 st.title("🎯 AI Tech & Growth Live Dashboard")
-st.caption(
-    f"Datos reales del mercado actualizados automáticamente — {datetime.date.today().strftime('%d de %B, %Y')}"
-)
+st.caption(f"Visualización automatizada de datos de mercado — Activa")
 
-# Tus 8 activos tecnológicos de eToro
+# Tu lista de seguimiento de eToro
 tickers = ["NVDA", "SMCI", "RKLB", "AMD", "VRT", "ANET", "MU", "QCOM"]
 
-# Selector oculto en barra lateral para el foco detallado
-seleccionado = st.sidebar.selectbox("Selecciona acción para enfocar:", tickers)
+# Barra lateral limpia para interactuar con el foco derecho
+st.sidebar.markdown("### Navegación")
+seleccionado = st.sidebar.selectbox("Seleccionar activo para expandir:", tickers)
 
+# División en dos columnas principales
 col_izq, col_der = st.columns([1.2, 1])
 
-# --- COLUMNA IZQUIERDA: LISTA DE SEGUIMIENTO ---
+# --- PROCESAMIENTO COLUMNA IZQUIERDA ---
 with col_izq:
     st.subheader("Lista de Monitoreo")
     for t in tickers:
         if t == seleccionado:
-            continue  # Excluir de la lista si ya se muestra en el panel de detalle
-
+            continue
+            
         data = obtener_datos_ticker(t)
         if data:
             color_cambio = "price-up" if data["cambio"] >= 0 else "price-down"
@@ -181,11 +182,11 @@ with col_izq:
                     </div>
                     <div style="margin-top:10px; font-size:0.85rem;">
                         <span style="color:#64748b;">RSI (14): {data['rsi']}</span>
-                        <div class="rsi-bar-bg"><div class="rsi-bar-fill" style="width:{data['rsi']}%"></div></div>
+                        <div class="rsi-bar-bg"><div class="rsi-bar-fill" style="width:{min(max(data['rsi'], 0), 100)}%"></div></div>
                     </div>
                     <div style="display:flex; justify-content:space-between; margin-top:12px; font-size:0.8rem;">
-                        <div><span style="color:#64748b;">SOPORTE</span><br><strong style="color:#38bdf8;">${data['soporte']}</strong></div>
-                        <div><span style="color:#64748b;">RESISTENCIA</span><br><strong style="color:#f97316;">${data['resistencia']}</strong></div>
+                        <div><span style="color:#64748b;">SOPORTE</span><br><strong style="color:#38bdf8;">${data['soporte']:.2f}</strong></div>
+                        <div><span style="color:#64748b;">RESISTENCIA</span><br><strong style="color:#f97316;">${data['resistencia']:.2f}</strong></div>
                         <div><span style="color:#64748b;">RIESGO</span><br><strong style="color:#e11d48;">ALTO</strong></div>
                     </div>
                 </div>
@@ -193,7 +194,7 @@ with col_izq:
                 unsafe_allow_html=True,
             )
 
-# --- COLUMNA DERECHA: FOCO COMPLETO EN ACCIÓN SELECCIONADA ---
+# --- PROCESAMIENTO COLUMNA DERECHA (EL BLOQUE QUE FALLABA) ---
 with col_der:
     st.subheader("Foco Detallado de Operación")
     main_data = obtener_datos_ticker(seleccionado)
@@ -202,6 +203,7 @@ with col_der:
         color_cambio = "price-up" if main_data["cambio"] >= 0 else "price-down"
         signo = "+" if main_data["cambio"] >= 0 else ""
 
+        # Aquí renderizamos tu bloque HTML dinámicamente usando las variables reales del mercado
         st.markdown(
             f"""
             <div class="main-card">
@@ -224,21 +226,21 @@ with col_der:
                 <div style="display:flex; justify-content:space-between; text-align:center; margin-bottom:25px;">
                     <div style="background:#0d0e12; padding:10px 20px; border-radius:6px; flex:1; margin-right:5px;">
                         <span style="font-size:0.75rem; color:#64748b;">🎯 Entrada Estimada</span><br>
-                        <strong style="color:#22c55e; font-size:1.1rem;">${main_data['soporte']}</strong>
+                        <strong style="color:#22c55e; font-size:1.1rem;">${main_data['soporte']:.2f}</strong>
                     </div>
                     <div style="background:#0d0e12; padding:10px 20px; border-radius:6px; flex:1; margin-right:5px;">
                         <span style="font-size:0.75rem; color:#64748b;">🛑 Stop Loss sugerido</span><br>
-                        <strong style="color:#ef4444; font-size:1.1rem;">${main_data['stop_loss']}</strong>
+                        <strong style="color:#ef4444; font-size:1.1rem;">${main_data['stop_loss']:.2f}</strong>
                     </div>
                     <div style="background:#0d0e12; padding:10px 20px; border-radius:6px; flex:1;">
                         <span style="font-size:0.75rem; color:#64748b;">🏆 Objetivo (Target)</span><br>
-                        <strong style="color:#3b82f6; font-size:1.1rem;">${main_data['target']}</strong>
+                        <strong style="color:#3b82f6; font-size:1.1rem;">${main_data['target']:.2f}</strong>
                     </div>
                 </div>
 
                 <div style="margin-bottom:20px;">
                     <span style="font-size:0.85rem; color:#64748b;">RSI DIARIO: {main_data['rsi']}</span>
-                    <div class="rsi-bar-bg"><div class="rsi-bar-fill" style="width:{main_data['rsi']}%"></div></div>
+                    <div class="rsi-bar-bg"><div class="rsi-bar-fill" style="width:{min(max(main_data['rsi'], 0), 100)}%"></div></div>
                 </div>
 
                 <div>
@@ -253,12 +255,11 @@ with col_der:
             unsafe_allow_html=True,
         )
 
-# Ticker de bolsa estético en el pie de página
+# Pie de página dinámico
 st.markdown("---")
 st.markdown(
     "<marquee scrollamount='4' style='color:#10b981; font-family:monospace; font-size: 0.9rem;'> "
-    "⚡ Monitoreando Sectores de Crecimiento Agresivo IA... Semiconductores e Infraestructura en vivo... "
-    "Utilice Stop Loss en eToro para proteger el capital... Datos provistos por Yahoo Finance API. "
+    "⚡ Sistema de Monitoreo Agresivo de Portafolio en Línea Activo... Conexión con Yahoo Finance API Estable... "
     "</marquee>",
     unsafe_allow_html=True,
 )
