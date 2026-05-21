@@ -74,8 +74,9 @@ st.markdown(
 def obtener_datos_ticker(ticker_symbol):
     try:
         ticker = yf.Ticker(ticker_symbol)
-        # Traemos historial de 6 meses para calcular las medias y RSI
-        df = ticker.history(period="6mo")
+        
+        # 🟢 CORRECCIÓN 1: Cambiado '6m' por '6mo'
+        df = ticker.history(period="6mo") 
         if df.empty or len(df) < 15:
             return None
 
@@ -111,8 +112,14 @@ def obtener_datos_ticker(ticker_symbol):
             badge_class = "badge-wait"
             nota = "Cerca de zonas de balance. Esperar pullback saludable hacia soportes clave."
 
+        # 🟢 CORRECCIÓN 2: Evitar errores si 'longName' no existe o falla
+        try:
+            nombre_limpio = ticker.info.get("longName", ticker_symbol)
+        except:
+            nombre_limpio = ticker_symbol
+
         return {
-            "nombre": ticker.info.get("longName", ticker_symbol),
+            "nombre": nombre_limpio,
             "precio": precio_actual,
             "cambio": cambio_pct,
             "rsi": rsi_actual,
@@ -126,7 +133,7 @@ def obtener_datos_ticker(ticker_symbol):
             "badge": badge_class,
             "nota": nota,
         }
-   except Exception as e:
+    except Exception as e:
         # Esto te mostrará en la consola si hay otro error oculto
         print(f"Error procesando {ticker_symbol}: {e}")
         return None
