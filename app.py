@@ -75,7 +75,7 @@ def obtener_datos_ticker(ticker_symbol):
     try:
         ticker = yf.Ticker(ticker_symbol)
         
-        # '6mo' corregido para evitar el error de la API de Yahoo
+        # Obtener historial de 6 meses
         df = ticker.history(period="6mo") 
         if df.empty or len(df) < 15:
             return None
@@ -94,7 +94,7 @@ def obtener_datos_ticker(ticker_symbol):
         rsi = 100 - (100 / (1 + rs))
         rsi_actual = round(rsi.iloc[-1], 2)
 
-        # Promedio Móvil Simple de 50 días para calcular soportes
+        # Promedio Móvil Simple de 50 días
         sma_50 = df["Close"].rolling(window=50).mean().iloc[-1]
 
         # Máximos y mínimos anuales
@@ -102,7 +102,7 @@ def obtener_datos_ticker(ticker_symbol):
         min_52w = hist_1y["Low"].min()
         max_52w = hist_1y["High"].max()
 
-        # Lógica de asignación de señales automatizadas
+        # Lógica de asignación de señales
         if rsi_actual < 40:
             senal = "OPORTUNIDAD DE COMPRA"
             badge_class = "badge-buy"
@@ -112,11 +112,13 @@ def obtener_datos_ticker(ticker_symbol):
             badge_class = "badge-wait"
             nota = "Precio en equilibrio. Esperar retroceso técnico hacia soportes clave antes de entrar."
 
-        # Control de errores en la metadata de Yahoo Finance
+        # Simplificamos la obtención del nombre para evitar que rompa el try principal
+        nombre_limpio = ticker_symbol
         try:
-            nombre_limpio = ticker.info.get("longName", ticker_symbol)
+            if ticker.info and "longName" in ticker.info:
+                nombre_limpio = ticker.info["longName"]
         except:
-            nombre_limpio = ticker_symbol
+            pass
 
         return {
             "nombre": nombre_limpio,
