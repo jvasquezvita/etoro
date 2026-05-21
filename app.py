@@ -3,14 +3,14 @@ import yfinance as yf
 import pandas as pd
 import streamlit as st
 
-# Configuración de página estilo Dashboard de Trading
+# 1. Configuración de página estilo Dashboard de Trading
 st.set_page_config(
     page_title="Crypto & Tech Aggressive Dashboard",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-# Estilos CSS personalizados para replicar el look oscuro y neón de tu imagen
+# 2. Estilos CSS personalizados para el look oscuro y neón
 st.markdown(
     """
     <style>
@@ -70,12 +70,12 @@ st.markdown(
 )
 
 
-# --- FUNCIÓN PARA LOGICA TÉCNICA ---
+# 3. Función de extracción y procesamiento técnico de datos
 def obtener_datos_ticker(ticker_symbol):
     try:
         ticker = yf.Ticker(ticker_symbol)
         
-        # 🟢 CORRECCIÓN 1: Cambiado '6m' por '6mo'
+        # '6mo' corregido para evitar el error de la API de Yahoo
         df = ticker.history(period="6mo") 
         if df.empty or len(df) < 15:
             return None
@@ -84,7 +84,7 @@ def obtener_datos_ticker(ticker_symbol):
         precio_anterior = df["Close"].iloc[-2]
         cambio_pct = ((precio_actual - precio_anterior) / precio_anterior) * 100
 
-        # Calcular RSI elemental
+        # Cálculo manual del RSI (14)
         delta = df["Close"].diff()
         gain = delta.where(delta > 0, 0)
         loss = -delta.where(delta < 0, 0)
@@ -94,25 +94,25 @@ def obtener_datos_ticker(ticker_symbol):
         rsi = 100 - (100 / (1 + rs))
         rsi_actual = round(rsi.iloc[-1], 2)
 
-        # Medias móviles para soporte/resistencia dinámico
+        # Promedio Móvil Simple de 50 días para calcular soportes
         sma_50 = df["Close"].rolling(window=50).mean().iloc[-1]
 
-        # Máximos y mínimos de 52 semanas
+        # Máximos y mínimos anuales
         hist_1y = ticker.history(period="1y")
         min_52w = hist_1y["Low"].min()
         max_52w = hist_1y["High"].max()
 
-        # Generar Señal Lógica
+        # Lógica de asignación de señales automatizadas
         if rsi_actual < 40:
             senal = "OPORTUNIDAD DE COMPRA"
             badge_class = "badge-buy"
-            nota = "Activo sobrevendido en gráfico diario. Descuento técnico óptimo."
+            nota = "Activo sobrevendido o en corrección saludable. Descuento técnico atractivo."
         else:
             senal = "ESPERAR"
             badge_class = "badge-wait"
-            nota = "Cerca de zonas de balance. Esperar pullback saludable hacia soportes clave."
+            nota = "Precio en equilibrio. Esperar retroceso técnico hacia soportes clave antes de entrar."
 
-        # 🟢 CORRECCIÓN 2: Evitar errores si 'longName' no existe o falla
+        # Control de errores en la metadata de Yahoo Finance
         try:
             nombre_limpio = ticker.info.get("longName", ticker_symbol)
         except:
@@ -134,33 +134,29 @@ def obtener_datos_ticker(ticker_symbol):
             "nota": nota,
         }
     except Exception as e:
-        # Esto te mostrará en la consola si hay otro error oculto
-        print(f"Error procesando {ticker_symbol}: {e}")
         return None
 
 
-# --- CONSTRUCCIÓN DEL DASHBOARD ---
-
+# 4. Renderizado de la Interfaz Gráfica (Layout)
 st.title("🎯 AI Tech & Growth Live Dashboard")
 st.caption(
-    f"Datos actualizados del mercado en tiempo real — {datetime.date.today().strftime('%B %d, %Y')}"
+    f"Datos reales del mercado actualizados automáticamente — {datetime.date.today().strftime('%d de %B, %Y')}"
 )
 
-# Lista de tus empresas
+# Tus 8 activos tecnológicos de eToro
 tickers = ["NVDA", "SMCI", "RKLB", "AMD", "VRT", "ANET", "MU", "QCOM"]
 
-# Sidebar para seleccionar cuál ver en detalle (Panel Derecho)
-st.sidebar.header("Enfoque de Análisis")
-seleccionado = st.sidebar.selectbox("Selecciona acción para enfoque:", tickers)
+# Selector oculto en barra lateral para el foco detallado
+seleccionado = st.sidebar.selectbox("Selecciona acción para enfocar:", tickers)
 
-# Layout de dos columnas principales (como en tu foto)
 col_izq, col_der = st.columns([1.2, 1])
 
+# --- COLUMNA IZQUIERDA: LISTA DE SEGUIMIENTO ---
 with col_izq:
-    st.subheader("Lista de Seguimiento")
+    st.subheader("Lista de Monitoreo")
     for t in tickers:
         if t == seleccionado:
-            continue  # Lo mostramos en la derecha extendido
+            continue  # Excluir de la lista si ya se muestra en el panel de detalle
 
         data = obtener_datos_ticker(t)
         if data:
@@ -178,7 +174,7 @@ with col_izq:
                         </div>
                         <div style="text-align:right;">
                             <div style="font-size:1.3rem; font-weight:bold; color:#fff;">${data['precio']:.2f}</div>
-                            <div class="{color_cambio}">{signo}{data['cambio']:.2f}% hoy</div>
+                            <div class="{color_cambio}">{signo}{data['cambio']:.2f}%</div>
                         </div>
                     </div>
                     <div style="margin-top:10px; font-size:0.85rem;">
@@ -195,8 +191,9 @@ with col_izq:
                 unsafe_allow_html=True,
             )
 
+# --- COLUMNA DERECHA: FOCO COMPLETO EN ACCIÓN SELECCIONADA ---
 with col_der:
-    st.subheader("Foco de Operación")
+    st.subheader("Foco Detallado de Operación")
     main_data = obtener_datos_ticker(seleccionado)
 
     if main_data:
@@ -213,22 +210,22 @@ with col_der:
                     </div>
                     <div style="text-align:right;">
                         <h1 style="margin:0; color:#fff; font-size:2.5rem;">${main_data['precio']:.2f}</h1>
-                        <div class="{color_cambio}" style="font-size:1.2rem;">{signo}{main_data['cambio']:.2f}% hoy</div>
+                        <div class="{color_cambio}" style="font-size:1.2rem;">{signo}{main_data['cambio']:.2f}%</div>
                     </div>
                 </div>
                 
                 <div style="background-color:#1e293b55; border: 1px solid #334155; padding:15px; border-radius:8px; margin-bottom:20px;">
-                    <div style="color:#eab308; font-weight:bold; font-size:0.9rem; margin-bottom:5px;">⚠️ SEÑAL: {main_data['senal']}</div>
+                    <div style="color:#eab308; font-weight:bold; font-size:0.9rem; margin-bottom:5px;">⚠️ SUGERENCIA: {main_data['senal']}</div>
                     <p style="font-size:0.9rem; margin:0; color:#cbd5e1;">{main_data['nota']}</p>
                 </div>
 
                 <div style="display:flex; justify-content:space-between; text-align:center; margin-bottom:25px;">
                     <div style="background:#0d0e12; padding:10px 20px; border-radius:6px; flex:1; margin-right:5px;">
-                        <span style="font-size:0.75rem; color:#64748b;">🎯 Zona Entrada</span><br>
-                        <strong style="color:#22c55e; font-size:1.1rem;">${main_data['soporte'] - 2} - ${main_data['soporte'] + 2}</strong>
+                        <span style="font-size:0.75rem; color:#64748b;">🎯 Entrada Estimada</span><br>
+                        <strong style="color:#22c55e; font-size:1.1rem;">${main_data['soporte']}</strong>
                     </div>
                     <div style="background:#0d0e12; padding:10px 20px; border-radius:6px; flex:1; margin-right:5px;">
-                        <span style="font-size:0.75rem; color:#64748b;">🛑 Stop Loss</span><br>
+                        <span style="font-size:0.75rem; color:#64748b;">🛑 Stop Loss sugerido</span><br>
                         <strong style="color:#ef4444; font-size:1.1rem;">${main_data['stop_loss']}</strong>
                     </div>
                     <div style="background:#0d0e12; padding:10px 20px; border-radius:6px; flex:1;">
@@ -243,10 +240,10 @@ with col_der:
                 </div>
 
                 <div>
-                    <span style="font-size:0.85rem; color:#64748b;">POSICIÓN EN RANGO DE 52 SEMANAS</span>
+                    <span style="font-size:0.85rem; color:#64748b;">HISTÓRICO EN RANGO DE 52 SEMANAS</span>
                     <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:#64748b; margin-top:5px;">
-                        <span>Min: ${main_data['min_52w']:.2f}</span>
-                        <span>Max: ${main_data['max_52w']:.2f}</span>
+                        <span>Mínimo: ${main_data['min_52w']:.2f}</span>
+                        <span>Máximo: ${main_data['max_52w']:.2f}</span>
                     </div>
                 </div>
             </div>
@@ -254,12 +251,12 @@ with col_der:
             unsafe_allow_html=True,
         )
 
-# Ticker inferior simulando cinta de opciones de la bolsa
+# Ticker de bolsa estético en el pie de página
 st.markdown("---")
 st.markdown(
-    "<marquee scrollamount='4' style='color:#10b981; font-family:monospace;'> "
-    "$$SPX Live Tracker... $COMPX Nasdaq Tech Index en corrección saludable... "
-    "NVDA dominando infraestructura IA... Mantenga la gestión de riesgo activa... "
+    "<marquee scrollamount='4' style='color:#10b981; font-family:monospace; font-size: 0.9rem;'> "
+    "⚡ Monitoreando Sectores de Crecimiento Agresivo IA... Semiconductores e Infraestructura en vivo... "
+    "Utilice Stop Loss en eToro para proteger el capital... Datos provistos por Yahoo Finance API. "
     "</marquee>",
     unsafe_allow_html=True,
 )
