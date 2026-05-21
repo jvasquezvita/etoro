@@ -30,7 +30,8 @@ def obtener_datos_ticker(ticker_symbol):
         avg_gain = gain.rolling(window=14).mean()
         avg_loss = loss.rolling(window=14).mean().replace(0, 0.00001)
         rs = avg_gain / avg_loss
-        rsi_actual = round(float(100 - (100 / (1 + rs))).iloc[-1]), 2)
+        #  LÍNEA CORREGIDA:
+        rsi_actual = round(float((100 - (100 / (1 + rs))).iloc[-1]), 2)
 
         # Medias y soportes
         sma_50 = float(df["Close"].rolling(window=50).mean().iloc[-1])
