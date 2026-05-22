@@ -15,15 +15,29 @@ st.set_page_config(
 if "tickers" not in st.session_state:
     st.session_state.tickers = ["NVDA", "SMCI", "RKLB", "AMD", "VRT", "ANET", "MU", "QCOM", "IONQ"]
 
-# 3. Función de extracción optimizada con soporte PRE-MARKET, AFTER-HOURS y OVERNIGHT
+# Inicializar la acción que está en enfoque en el panel derecho
+if "seleccionado" not in st.session_state:
+    st.session_state.seleccionado = st.session_state.tickers[0] if st.session_state.tickers else None
+
+# 3. Función de extracción optimizada con precio en vivo desde metadatos (.info)
 def obtener_datos_ticker(ticker_symbol):
     try:
         ticker = yf.Ticker(ticker_symbol)
         
-        # MEJORA CRÍTICA: Se añade prepost=True para incluir datos fuera de hora (Overnight/Extended)
+        # Extracción directa del precio en tiempo real (evita el congelamiento de la API de las velas)
+        info = ticker.info
+        
+        # Yahoo cambia el nombre de la variable si el mercado está en Post-Market u Overnight
+        precio_actual = info.get('regularMarketPrice')
+        if info.get('marketState') in ['POST', 'POSTPOST', 'PRE', 'CLOSED', 'OFF']:
+            precio_actual = info.get('postMarketPrice') or info.get('preMarketPrice') or info.get('regularMarketPrice') or info.get('previousClose')
+        
+        precio_actual = float(precio_actual)
+
+        # Descargamos el historial rápido para calcular el RSI y la Media Móvil (SMA)
         df = ticker.history(period="3d", interval="1m", prepost=True) 
         
-        # SISTEMA FALLBACK: Si aun así está vacío, bajamos resolución manteniendo el mercado extendido
+        # Fallback de historial si está vacío
         if df.empty or len(df) < 15:
             df = ticker.history(period="5d", interval="15m", prepost=True)
             if df.empty:
@@ -32,9 +46,11 @@ def obtener_datos_ticker(ticker_symbol):
         if df.empty:
             return None
 
-        precio_actual = float(df["Close"].iloc[-1])
+        if not precio_actual or precio_actual == 0:
+            precio_actual = float(df["Close"].iloc[-1])
+            
         precio_anterior = float(df["Close"].iloc[-2]) if len(df) > 1 else precio_actual
-        cambio_pct = float(((precio_actual - precio_anterior) / precio_anterior) * 100)
+        cambio_pct = float(info.get('regularMarketChangePercent', ((precio_actual - precio_anterior) / precio_anterior) * 100))
 
         # Cálculo seguro del RSI (14 períodos)
         delta = df["Close"].diff()
@@ -59,21 +75,17 @@ def obtener_datos_ticker(ticker_symbol):
             min_periodo = float(df["Low"].min())
             max_periodo = float(df["High"].max())
 
-        # RECOMENDACIÓN TÁCTICA INTRADÍA: Umbrales ajustados a 35 y 65
+        # RECOMENDACIÓN TÁCTICA INTRADÍA
         if rsi_actual <= 35:
             senal = "🟢 COMPRA INTRADÍA"
-            badge = "COMPRA"
             nota = f"RSI en sobreventa rápida ({rsi_actual}). Excelente ventana si el precio coquetea con el soporte."
         elif rsi_actual >= 65:
             senal = "🔴 VENTA / RECOGER GANANCIAS"
-            badge = "VENTA"
             nota = f"RSI en sobrecompra ({rsi_actual}). Riesgo alto de retroceso técnico inmediato. Protege capital."
         else:
             senal = "🟡 MONITORIZAR"
-            badge = "ESPERAR"
             nota = f"Precio en equilibrio en gráfico rápido (RSI: {rsi_actual}). Esperar aproximación a zonas clave."
 
-        # CÁLCULO DE STOP LOSS GUÍA: 1.5% por debajo del soporte para absorber ruido en x5 o x10
         soporte_estimado = round(sma_50 * 0.995, 2)
         stop_loss_recomendado = round(soporte_estimado * 0.985, 2)
 
@@ -88,7 +100,6 @@ def obtener_datos_ticker(ticker_symbol):
             "min_5d": min_periodo,
             "max_5d": max_periodo,
             "senal": senal,
-            "badge": badge,
             "nota": nota
         }
     except:
@@ -97,7 +108,8 @@ def obtener_datos_ticker(ticker_symbol):
 # --- PANEL DE CONTROL LATERAL (Gestión Dinámica de Activos) ---
 st.sidebar.markdown("## 🛠️ Panel de Control")
 
-nuevo_ticker = st.sidebar.text_input("Añadir símbolo (Ej: TSLA, AAPL, BTC-USD, IONQ):").upper().strip()
+# Sección 1: Añadir Acción
+nuevo_ticker = st.sidebar.text_input("Añadir símbolo (Ej: TSLA, AAPL, IONQ):").upper().strip()
 if st.sidebar.button("➕ Añadir Acción"):
     if nuevo_ticker and nuevo_ticker not in st.session_state.tickers:
         try:
@@ -105,6 +117,7 @@ if st.sidebar.button("➕ Añadir Acción"):
             test_df = test_ticker.history(period="1d")
             if not test_df.empty:
                 st.session_state.tickers.append(nuevo_ticker)
+                st.session_state.seleccionado = nuevo_ticker  # Enfocar automáticamente la nueva acción
                 st.sidebar.success(f"{nuevo_ticker} añadido!")
                 st.rerun()
             else:
@@ -112,17 +125,31 @@ if st.sidebar.button("➕ Añadir Acción"):
         except:
             st.sidebar.error("Error al validar el símbolo.")
 
+# Sección 2: Eliminar Acción (CORREGIDO)
 st.sidebar.markdown("---")
 if len(st.session_state.tickers) > 0:
-    ticker_a_eliminar = st.sidebar.selectbox("Eliminar una acción:", st.session_state.tickers)
+    # Usamos una clave única para asegurar que Streamlit no duplique estados viejos
+    ticker_a_eliminar = st.sidebar.selectbox("Eliminar una acción:", st.session_state.tickers, key="selectbox_eliminar")
     if st.sidebar.button("🗑️ Eliminar Acción"):
         st.session_state.tickers.remove(ticker_a_eliminar)
+        # Si eliminamos la acción que estaba en enfoque, cambiamos el enfoque a la primera de la lista
+        if st.session_state.seleccionado == ticker_a_eliminar:
+            st.session_state.seleccionado = st.session_state.tickers[0] if st.session_state.tickers else None
         st.sidebar.warning(f"{ticker_a_eliminar} eliminado.")
         st.rerun()
 
+# Sección 3: Selector alternativo manual de enfoque
 st.sidebar.markdown("---")
 if st.session_state.tickers:
-    seleccionado = st.sidebar.selectbox("🎯 ACCIÓN EN ENFOQUE:", st.session_state.tickers)
+    # Sincronizar el selectbox lateral con el estado de selección global
+    if st.session_state.seleccionado not in st.session_state.tickers:
+        st.session_state.seleccionado = st.session_state.tickers[0]
+        
+    index_actual = st.session_state.tickers.index(st.session_state.seleccionado)
+    selector_manual = st.sidebar.selectbox("🎯 ACCIÓN EN ENFOQUE:", st.session_state.tickers, index=index_actual)
+    if selector_manual != st.session_state.seleccionado:
+        st.session_state.seleccionado = selector_manual
+        st.rerun()
 else:
     st.info("Añade una acción desde la barra lateral para empezar.")
     st.stop()
@@ -130,22 +157,29 @@ else:
 
 # --- INTERFAZ GRÁFICA PRINCIPAL ---
 st.title("⚡ AI Day Trading Scalper Dashboard (Soporte 24h)")
-st.caption(f"Frecuencia de monitoreo: 1m (Incluye mercado nocturno/Overnight) — Auto-refresco (15s) — Sincronización: {datetime.datetime.now().strftime('%H:%M:%S')}")
+st.caption(f"Frecuencia de monitoreo: 1m (Overnight habilitado) — Auto-refresco (15s) — Sincronización: {datetime.datetime.now().strftime('%H:%M:%S')}")
 st.markdown("---")
 
 col_izq, col_der = st.columns([1.1, 1])
 
-# --- COLUMNA IZQUIERDA: LISTA DE MONITORIZACIÓN ---
+# --- COLUMNA IZQUIERDA: MONITOR DE SCALPING INTERACTIVO ---
 with col_izq:
-    st.markdown("### 📋 Monitor de Scalping Activo")
+    st.markdown("### 📋 Monitor de Scalping Activo (Haz clic para enfocar)")
     
     for t in st.session_state.tickers:
         data = obtener_datos_ticker(t)
         if data:
+            # Crear un contenedor visual dinámico. Si está seleccionado, cambia sutilmente el borde o diseño
+            es_seleccionado = (t == st.session_state.seleccionado)
+            
             with st.container(border=True):
-                c1, c2, c3 = st.columns([1, 1, 1])
+                c1, c2, c3 = st.columns([1.1, 1, 0.9])
                 with c1:
-                    st.markdown(f"### **{t}**")
+                    # Transformamos el nombre del Ticker en un botón interactivo para cambiar el enfoque
+                    label_boton = f"🎯 {t}" if es_seleccionado else f"{t}"
+                    if st.button(label_boton, key=f"btn_{t}", use_container_width=True):
+                        st.session_state.seleccionado = t
+                        st.rerun()
                     st.caption(data["senal"])
                 with c2:
                     st.metric(
@@ -158,14 +192,15 @@ with col_izq:
                     st.markdown(f"**RSI (1m):** {data['rsi']}")
                     st.progress(data["rsi"] / 100)
 
-# --- COLUMNA DERECHA: ENFOQUE TÁCTICO APALANCADO ---
+# --- COLUMNA DERECHA: ENFOQUE TÁCTICO APALANCADO (ACCION SELECCIONADA) ---
 with col_der:
-    st.markdown(f"### 🔍 Ejecución de Orden Corta: {seleccionado}")
-    main = obtener_datos_ticker(seleccionado)
+    seleccionado_actual = st.session_state.seleccionado
+    st.markdown(f"### 🔍 Ejecución de Orden Corta: {seleccionado_actual}")
+    main = obtener_datos_ticker(seleccionado_actual)
     
     if main:
         with st.container(border=True):
-            st.header(f"📊 {seleccionado} — ${main['precio']:.2f}")
+            st.header(f"📊 {seleccionado_actual} — ${main['precio']:.2f}")
             st.metric(label="Último Precio Registrado", value=f"${main['precio']:.2f}", delta=f"{main['cambio']:.2f}%")
             
             st.info(f"**{main['senal']}**\n\n{main['nota']}")
@@ -198,8 +233,8 @@ with col_der:
 
         with st.expander("📚 CONSEJOS DE CONTROL DE DAÑOS (APALANCAMIENTO)", expanded=True):
             st.markdown("""
-            * **El mercado Overnight tiene menos liquidez:** Ten mucho cuidado al operar con apalancamiento x5 o x10 fuera del horario regular (de noche). Como hay menos traders operando, los precios pueden dar saltos bruscos ("gaps") y activar tu Stop Loss más rápido de lo normal.
-            * **Diferencia con eToro:** eToro tiene activos específicos habilitados para trading de 24 horas (marcados con el sufijo `.EXT` o un icono de luna). Revisa siempre que la acción permita la ejecución antes de confiarte en el precio nocturno.
+            * **Interactividad en un clic:** Ahora puedes pulsar directamente sobre las siglas de cualquier acción en el panel izquierdo (ej. el botón de `IONQ`) para actualizar esta columna al instante sin usar el menú lateral.
+            * **Mercado Nocturno:** Recuerda vigilar el spread en eToro durante las horas Overnight, ya que la volatilidad suele ser mayor al haber menos volumen negociado.
             """)
 
 # --- 🔄 BUCLE DE ACTUALIZACIÓN AUTOMÁTICA EN SEGUNDO PLANO ---
