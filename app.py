@@ -35,12 +35,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# FUNCIÓN: Extracción de precio extendido mediante Twelve Data
+# FUNCIÓN: Extracción de precio en vivo mediante Twelve Data
 def obtener_precio_overnight_real(ticker_symbol):
     if API_KEY_TWELVE == "a38e308378f54c20ba80c8992d919f1e":
         return None
     try:
-        url = f"https://api.twwervedata.com/price?symbol={ticker_symbol}&apikey={API_KEY_TWELVE}&include_pre_post=true"
+        url = f"https://api.twelvedata.com/price?symbol={ticker_symbol}&apikey={API_KEY_TWELVE}&include_pre_post=true"
         response = requests.get(url, timeout=3).json()
         if "price" in response:
             return float(response["price"])
@@ -124,11 +124,11 @@ def obtener_datos_ticker(ticker_symbol):
 
 
 # --- INTERFAZ DE COMANDO CENTRAL ---
-st.title("🦅 WAR ROOM: RADAR EN VIVO CLASIFICADO POR RSI")
+st.title("🦅 WAR ROOM: RADAR CLASIFICADO Y ORDENADO POR RSI")
 st.caption(f"Refresco táctico automático: 15s — Sincronización del Servidor: {datetime.datetime.now().strftime('%H:%M:%S')}")
 st.markdown("---")
 
-# Descarga inicial de la sesión actual de mercado
+# Descarga inicial de los datos de mercado
 datos_completos = {}
 for t in st.session_state.tickers:
     res = obtener_datos_ticker(t)
@@ -140,15 +140,16 @@ col_longs, col_shorts, col_orden = st.columns([1.1, 1.1, 1])
 
 # --- COLUMNA 1: ZONA DE COMPRA / LONGS (RSI <= 50) ---
 with col_longs:
-    st.markdown("### 🟢 ZONA LONGS (RSI Low / Compra)")
+    st.markdown("### 🟢 ZONA LONGS (Menor RSI primero)")
     
-    # Filtramos solo activos con RSI menor o igual a 50
+    # Filtramos activos <= 50 y los ordenamos de MENOR a MAYOR RSI (Ascendente)
     activos_long = {k: v for k, v in datos_completos.items() if v["rsi"] <= 50}
+    activos_long_ordenados = dict(sorted(activos_long.items(), key=lambda item: item[1]["rsi"]))
     
-    if not activos_long:
-        st.caption("No hay activos en sobreventa o equilibrio en este momento.")
+    if not activos_long_ordenados:
+        st.caption("No hay activos en zona de compra o equilibrio.")
     else:
-        for t, data in activos_long.items():
+        for t, data in activos_long_ordenados.items():
             es_seleccionado = (t == st.session_state.seleccionado)
             borde_final = "#ffb703" if es_seleccionado else data["border_color"]
             grosor_borde = "3px" if es_seleccionado else "1px"
@@ -158,7 +159,7 @@ with col_longs:
                     <div style="background-color: {data['bg_color']}; padding: 10px; border-radius: 4px; border: {grosor_borde} solid {borde_final}; text-align: center;">
                         <span style="font-size: 18px; font-weight: bold; color: white;">{t}</span> | 
                         <span style="font-size: 20px; font-weight: bold; color: #00ff41;">${data['precio']:.2f}</span><br>
-                        <span style="font-size: 13px; color: #cfd6e4;">RSI: <b>{data['rsi']}</b> ({data['senal']})</span>
+                        <span style="font-size: 13px; color: #cfd6e4;">RSI: <b style="color:#00ff41; font-size:15px;">{data['rsi']}</b> ({data['senal']})</span>
                     </div>
                 """, unsafe_allow_html=True)
                 if st.button(f"🎯 Analizar {t}", key=f"long_{t}", use_container_width=True):
@@ -167,15 +168,16 @@ with col_longs:
 
 # --- COLUMNA 2: ZONA DE CORTOS / SHORTS (RSI > 50) ---
 with col_shorts:
-    st.markdown("### 🔴 ZONA SHORTS (RSI High / Venta)")
+    st.markdown("### 🔴 ZONA SHORTS (Mayor RSI primero)")
     
-    # Filtramos solo activos con RSI mayor a 50
+    # Filtramos activos > 50 y los ordenamos de MAYOR a MENOR RSI (Descendente)
     activos_short = {k: v for k, v in datos_completos.items() if v["rsi"] > 50}
+    activos_short_ordenados = dict(sorted(activos_short.items(), key=lambda item: item[1]["rsi"], reverse=True))
     
-    if not activos_short:
+    if not activos_short_ordenados:
         st.caption("No hay activos sobrecomprados en este momento.")
     else:
-        for t, data in activos_short.items():
+        for t, data in activos_short_ordenados.items():
             es_seleccionado = (t == st.session_state.seleccionado)
             borde_final = "#ffb703" if es_seleccionado else data["border_color"]
             grosor_borde = "3px" if es_seleccionado else "1px"
@@ -185,7 +187,7 @@ with col_shorts:
                     <div style="background-color: {data['bg_color']}; padding: 10px; border-radius: 4px; border: {grosor_borde} solid {borde_final}; text-align: center;">
                         <span style="font-size: 18px; font-weight: bold; color: white;">{t}</span> | 
                         <span style="font-size: 20px; font-weight: bold; color: #ff3333;">${data['precio']:.2f}</span><br>
-                        <span style="font-size: 13px; color: #cfd6e4;">RSI: <b>{data['rsi']}</b> ({data['senal']})</span>
+                        <span style="font-size: 13px; color: #cfd6e4;">RSI: <b style="color:#ff3333; font-size:15px;">{data['rsi']}</b> ({data['senal']})</span>
                     </div>
                 """, unsafe_allow_html=True)
                 if st.button(f"🎯 Analizar {t}", key=f"short_{t}", use_container_width=True):
@@ -199,8 +201,6 @@ with col_orden:
     
     if target_ticker in datos_completos:
         main = datos_completos[target_ticker]
-        
-        # Color dinámico para la cabecera del panel táctico según su clasificación actual
         header_color = "🟢 LONG" if main["rsi"] <= 50 else "🔴 SHORT"
         
         with st.container(border=True):
@@ -216,7 +216,6 @@ with col_orden:
             st.markdown("---")
             st.markdown("##### 🚨 Parámetros Listos para Copiar a eToro")
             
-            # Formato de números limpios y directos para evitar titubeos
             st.error(f"🛑 STOP LOSS: **${main['stop_loss']:.2f}**")
             st.info(f"🎯 ENTRADA ÓPTIMA: **${main['soporte']:.2f}**")
             st.success(f"🏆 TARGET CORTO: **${main['target']:.2f}**")
@@ -232,15 +231,24 @@ with col_orden:
                 label_visibility="collapsed"
             )
             
-            # Utilidades rápidas de administración
-            with st.expander("🛠️ Control de Lista"):
-                ticker_a_eliminar = st.selectbox("Eliminar activo:", st.session_state.tickers)
-                if st.button("🗑️ Confirmar"):
+            # --- SECCIÓN EN EXPANDER ACTUALIZADA CON GUÍA TÉCNICA DE RSI ---
+            with st.expander("🛠️ Control de Lista & Guía RSI", expanded=False):
+                st.markdown("""
+                **📘 GUÍA DE COLORES Y SEÑALES (RSI 14m):**
+                * **🟢 Verde Oscuro ($\leq$ 32):** *Sobreventa Crítica.* El precio está muy castigado. Alta probabilidad de rebote técnico inmediato. Zona óptima de Longs.
+                * **🔴 Rojo Sangre ($\geq$ 68):** *Sobrecompra Crítica.* Compradores agotados. Riesgo inminente de corrección bajista. Zona óptima de Cortos/Shorts.
+                * **🟡 Gris Oscuro (33 a 67):** *Zona Neutral.* El activo está consolidando o moviéndose en equilibrio. Monitorear aproximación a extremos.
+                
+                ---
+                """)
+                
+                ticker_a_eliminar = st.selectbox("Eliminar activo del radar:", st.session_state.tickers)
+                if st.button("🗑️ Confirmar Eliminación"):
                     st.session_state.tickers.remove(ticker_a_eliminar)
                     st.session_state.seleccionado = st.session_state.tickers[0]
                     st.rerun()
     else:
-        st.warning("Selecciona un ticker del panel izquierdo o central para proyectar los datos de eToro.")
+        st.warning("Selecciona un ticker para proyectar los datos de eToro.")
 
 # --- BUCLE DE REFRESCO AUTOMÁTICO ---
 time.sleep(15)
