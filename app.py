@@ -15,20 +15,18 @@ st.set_page_config(
 if "tickers" not in st.session_state:
     st.session_state.tickers = ["NVDA", "SMCI", "RKLB", "AMD", "VRT", "ANET", "MU", "QCOM", "IONQ"]
 
-# 3. Función de extracción optimizada y blindada contra mercado cerrado
+# 3. Función de extracción optimizada con soporte PRE-MARKET, AFTER-HOURS y OVERNIGHT
 def obtener_datos_ticker(ticker_symbol):
     try:
         ticker = yf.Ticker(ticker_symbol)
         
-        # Intento 1: Máxima resolución en tiempo real (Velas de 1 minuto de los últimos 3 días)
-        df = ticker.history(period="3d", interval="1m") 
+        # MEJORA CRÍTICA: Se añade prepost=True para incluir datos fuera de hora (Overnight/Extended)
+        df = ticker.history(period="3d", interval="1m", prepost=True) 
         
-        # SISTEMA FALLBACK: Si el mercado está cerrado o la API de 1m no responde, bajamos la resolución
+        # SISTEMA FALLBACK: Si aun así está vacío, bajamos resolución manteniendo el mercado extendido
         if df.empty or len(df) < 15:
-            # Plan B: Velas de 15 minutos de los últimos 5 días
-            df = ticker.history(period="5d", interval="15m")
+            df = ticker.history(period="5d", interval="15m", prepost=True)
             if df.empty:
-                # Plan C: Historial diario del último mes (Garantiza datos históricos en fin de semana)
                 df = ticker.history(period="1mo", interval="1d")
 
         if df.empty:
@@ -52,7 +50,7 @@ def obtener_datos_ticker(ticker_symbol):
         window_size = min(50, len(df))
         sma_50 = float(df["Close"].rolling(window=window_size).mean().iloc[-1])
         
-        # Rangos históricos estables para la barra de progreso de 52 semanas
+        # Rangos históricos estables para la barra de progreso
         hist_1y = ticker.history(period="1y")
         if not hist_1y.empty:
             min_periodo = float(hist_1y["Low"].min())
@@ -99,7 +97,6 @@ def obtener_datos_ticker(ticker_symbol):
 # --- PANEL DE CONTROL LATERAL (Gestión Dinámica de Activos) ---
 st.sidebar.markdown("## 🛠️ Panel de Control")
 
-# Sección 1: Añadir Acción de forma dinámica
 nuevo_ticker = st.sidebar.text_input("Añadir símbolo (Ej: TSLA, AAPL, BTC-USD, IONQ):").upper().strip()
 if st.sidebar.button("➕ Añadir Acción"):
     if nuevo_ticker and nuevo_ticker not in st.session_state.tickers:
@@ -115,7 +112,6 @@ if st.sidebar.button("➕ Añadir Acción"):
         except:
             st.sidebar.error("Error al validar el símbolo.")
 
-# Sección 2: Eliminar Acción de forma dinámica
 st.sidebar.markdown("---")
 if len(st.session_state.tickers) > 0:
     ticker_a_eliminar = st.sidebar.selectbox("Eliminar una acción:", st.session_state.tickers)
@@ -124,7 +120,6 @@ if len(st.session_state.tickers) > 0:
         st.sidebar.warning(f"{ticker_a_eliminar} eliminado.")
         st.rerun()
 
-# Sección 3: Selección de enfoque táctico
 st.sidebar.markdown("---")
 if st.session_state.tickers:
     seleccionado = st.sidebar.selectbox("🎯 ACCIÓN EN ENFOQUE:", st.session_state.tickers)
@@ -134,11 +129,10 @@ else:
 
 
 # --- INTERFAZ GRÁFICA PRINCIPAL ---
-st.title("⚡ AI Day Trading Scalper Dashboard")
-st.caption(f"Frecuencia de monitoreo: Velas de 1 minuto — Auto-refresco (Cada 15s) — Sincronización: {datetime.datetime.now().strftime('%H:%M:%S')}")
+st.title("⚡ AI Day Trading Scalper Dashboard (Soporte 24h)")
+st.caption(f"Frecuencia de monitoreo: 1m (Incluye mercado nocturno/Overnight) — Auto-refresco (15s) — Sincronización: {datetime.datetime.now().strftime('%H:%M:%S')}")
 st.markdown("---")
 
-# Layout de dos columnas principales
 col_izq, col_der = st.columns([1.1, 1])
 
 # --- COLUMNA IZQUIERDA: LISTA DE MONITORIZACIÓN ---
@@ -155,7 +149,7 @@ with col_izq:
                     st.caption(data["senal"])
                 with c2:
                     st.metric(
-                        label="Precio Actual", 
+                        label="Precio Actual (24h)", 
                         value=f"${data['precio']:.2f}", 
                         delta=f"{data['cambio']:.2f}%"
                     )
@@ -174,7 +168,6 @@ with col_der:
             st.header(f"📊 {seleccionado} — ${main['precio']:.2f}")
             st.metric(label="Último Precio Registrado", value=f"${main['precio']:.2f}", delta=f"{main['cambio']:.2f}%")
             
-            # Alerta de sugerencia dinámica
             st.info(f"**{main['senal']}**\n\n{main['nota']}")
             
             st.markdown("#### 🚨 Parámetros de Configuración Obligatoria para eToro (x5 / x10)")
@@ -203,11 +196,10 @@ with col_der:
                 disabled=True
             )
 
-        # MANUAL EXPANDIBLE DE SEGURIDAD EN PANTALLA
         with st.expander("📚 CONSEJOS DE CONTROL DE DAÑOS (APALANCAMIENTO)", expanded=True):
             st.markdown("""
-            * **El desfase regulatorio:** Recuerda que la API pública de Yahoo puede traer de **10 a 15 minutos de retraso** según las condiciones de la bolsa de Nueva York. Tu Dashboard es una **brújula de estrategia** (te dice dónde están los soportes y si hay sobrecompra/sobreventa), pero a la hora de abrir la operación, el precio de entrada definitivo es el que dicte **eToro**.
-            * **Ejecución del Stop Loss:** A apalancamiento x10, si el precio real cae al *Stop Loss Recomendado*, tu cuenta perderá aproximadamente entre un **15% y un 20%** de esa operación. No quitar el stop loss es la única forma de evitar que una caída repentina te liquide el 100% del margen.
+            * **El mercado Overnight tiene menos liquidez:** Ten mucho cuidado al operar con apalancamiento x5 o x10 fuera del horario regular (de noche). Como hay menos traders operando, los precios pueden dar saltos bruscos ("gaps") y activar tu Stop Loss más rápido de lo normal.
+            * **Diferencia con eToro:** eToro tiene activos específicos habilitados para trading de 24 horas (marcados con el sufijo `.EXT` o un icono de luna). Revisa siempre que la acción permita la ejecución antes de confiarte en el precio nocturno.
             """)
 
 # --- 🔄 BUCLE DE ACTUALIZACIÓN AUTOMÁTICA EN SEGUNDO PLANO ---
