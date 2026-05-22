@@ -13,14 +13,14 @@ st.set_page_config(
 )
 
 # REEMPLAZA AQUÍ TU API KEY DE TWELVE DATA
-API_KEY_TWELVE = "TU_API_KEY_AQUI"
+API_KEY_TWELVE = "a38e308378f54c20ba80c8992d919f1e"
 
 # 2. LISTA MAESTRA DE TICKERS (Mantiene tu orden estructural de procesamiento)
 if "tickers" not in st.session_state:
     st.session_state.tickers = [
         "VRT", "ANET", "NVDA", "AMD", "MU", 
         "ARM", "QCOM", "TSLA", "GOOG", "RKLB", 
-        "SMCI", "CEL", "BTC/USD"
+        "SMCI", "BTC/USD"
     ]
 
 if "seleccionado" not in st.session_state:
@@ -37,7 +37,7 @@ st.markdown("""
 
 # FUNCIÓN: Extracción de precio extendido mediante Twelve Data
 def obtener_precio_overnight_real(ticker_symbol):
-    if API_KEY_TWELVE == "TU_API_KEY_AQUI":
+    if API_KEY_TWELVE == "a38e308378f54c20ba80c8992d919f1e":
         return None
     try:
         url = f"https://api.twwervedata.com/price?symbol={ticker_symbol}&apikey={API_KEY_TWELVE}&include_pre_post=true"
