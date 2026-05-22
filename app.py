@@ -19,25 +19,16 @@ if "tickers" not in st.session_state:
 if "seleccionado" not in st.session_state:
     st.session_state.seleccionado = st.session_state.tickers[0] if st.session_state.tickers else None
 
-# 3. Función de extracción optimizada con precio en vivo desde metadatos (.info)
+# 3. Función de extracción ligera para evitar bloqueos de Yahoo Finance
 def obtener_datos_ticker(ticker_symbol):
     try:
         ticker = yf.Ticker(ticker_symbol)
         
-        # Extracción directa del precio en tiempo real (evita el congelamiento de la API de las velas)
-        info = ticker.info
-        
-        # Yahoo cambia el nombre de la variable si el mercado está en Post-Market u Overnight
-        precio_actual = info.get('regularMarketPrice')
-        if info.get('marketState') in ['POST', 'POSTPOST', 'PRE', 'CLOSED', 'OFF']:
-            precio_actual = info.get('postMarketPrice') or info.get('preMarketPrice') or info.get('regularMarketPrice') or info.get('previousClose')
-        
-        precio_actual = float(precio_actual)
-
-        # Descargamos el historial rápido para calcular el RSI y la Media Móvil (SMA)
+        # Extracción segura mediante historial con mercado extendido (Overnight / Afterhours)
+        # Eliminamos .info para evitar que Yahoo congele o bloquee tus peticiones
         df = ticker.history(period="3d", interval="1m", prepost=True) 
         
-        # Fallback de historial si está vacío
+        # SISTEMA FALLBACK: Si no hay datos de 1 minuto, bajamos resolución
         if df.empty or len(df) < 15:
             df = ticker.history(period="5d", interval="15m", prepost=True)
             if df.empty:
@@ -46,11 +37,10 @@ def obtener_datos_ticker(ticker_symbol):
         if df.empty:
             return None
 
-        if not precio_actual or precio_actual == 0:
-            precio_actual = float(df["Close"].iloc[-1])
-            
+        # Obtenemos el precio "Live" del último segundo registrado en la vela actual
+        precio_actual = float(df["Close"].iloc[-1])
         precio_anterior = float(df["Close"].iloc[-2]) if len(df) > 1 else precio_actual
-        cambio_pct = float(info.get('regularMarketChangePercent', ((precio_actual - precio_anterior) / precio_anterior) * 100))
+        cambio_pct = float(((precio_actual - precio_anterior) / precio_anterior) * 100)
 
         # Cálculo seguro del RSI (14 períodos)
         delta = df["Close"].diff()
@@ -66,14 +56,9 @@ def obtener_datos_ticker(ticker_symbol):
         window_size = min(50, len(df))
         sma_50 = float(df["Close"].rolling(window=window_size).mean().iloc[-1])
         
-        # Rangos históricos estables para la barra de progreso
-        hist_1y = ticker.history(period="1y")
-        if not hist_1y.empty:
-            min_periodo = float(hist_1y["Low"].min())
-            max_periodo = float(hist_1y["High"].max())
-        else:
-            min_periodo = float(df["Low"].min())
-            max_periodo = float(df["High"].max())
+        # Rangos mínimos y máximos del dataframe actual para evitar colapsos de la barra
+        min_periodo = float(df["Low"].min())
+        max_periodo = float(df["High"].max())
 
         # RECOMENDACIÓN TÁCTICA INTRADÍA
         if rsi_actual <= 35:
@@ -105,7 +90,7 @@ def obtener_datos_ticker(ticker_symbol):
     except:
         return None
 
-# --- PANEL DE CONTROL LATERAL (Gestión Dinámica de Activos) ---
+# --- PANEL DE CONTROL LATERAL ---
 st.sidebar.markdown("## 🛠️ Panel de Control")
 
 # Sección 1: Añadir Acción
@@ -117,7 +102,7 @@ if st.sidebar.button("➕ Añadir Acción"):
             test_df = test_ticker.history(period="1d")
             if not test_df.empty:
                 st.session_state.tickers.append(nuevo_ticker)
-                st.session_state.seleccionado = nuevo_ticker  # Enfocar automáticamente la nueva acción
+                st.session_state.seleccionado = nuevo_ticker
                 st.sidebar.success(f"{nuevo_ticker} añadido!")
                 st.rerun()
             else:
@@ -125,23 +110,20 @@ if st.sidebar.button("➕ Añadir Acción"):
         except:
             st.sidebar.error("Error al validar el símbolo.")
 
-# Sección 2: Eliminar Acción (CORREGIDO)
+# Sección 2: Eliminar Acción
 st.sidebar.markdown("---")
 if len(st.session_state.tickers) > 0:
-    # Usamos una clave única para asegurar que Streamlit no duplique estados viejos
     ticker_a_eliminar = st.sidebar.selectbox("Eliminar una acción:", st.session_state.tickers, key="selectbox_eliminar")
     if st.sidebar.button("🗑️ Eliminar Acción"):
         st.session_state.tickers.remove(ticker_a_eliminar)
-        # Si eliminamos la acción que estaba en enfoque, cambiamos el enfoque a la primera de la lista
         if st.session_state.seleccionado == ticker_a_eliminar:
             st.session_state.seleccionado = st.session_state.tickers[0] if st.session_state.tickers else None
         st.sidebar.warning(f"{ticker_a_eliminar} eliminado.")
         st.rerun()
 
-# Sección 3: Selector alternativo manual de enfoque
+# Sección 3: Selector de Enfoque Manual
 st.sidebar.markdown("---")
 if st.session_state.tickers:
-    # Sincronizar el selectbox lateral con el estado de selección global
     if st.session_state.seleccionado not in st.session_state.tickers:
         st.session_state.seleccionado = st.session_state.tickers[0]
         
@@ -156,8 +138,8 @@ else:
 
 
 # --- INTERFAZ GRÁFICA PRINCIPAL ---
-st.title("⚡ AI Day Trading Scalper Dashboard (Soporte 24h)")
-st.caption(f"Frecuencia de monitoreo: 1m (Overnight habilitado) — Auto-refresco (15s) — Sincronización: {datetime.datetime.now().strftime('%H:%M:%S')}")
+st.title("⚡ AI Day Trading Scalper Dashboard (Live 24h)")
+st.caption(f"Actualización del flujo: Cada 15s sin bloqueos — Sincronización del sistema: {datetime.datetime.now().strftime('%H:%M:%S')}")
 st.markdown("---")
 
 col_izq, col_der = st.columns([1.1, 1])
@@ -169,13 +151,11 @@ with col_izq:
     for t in st.session_state.tickers:
         data = obtener_datos_ticker(t)
         if data:
-            # Crear un contenedor visual dinámico. Si está seleccionado, cambia sutilmente el borde o diseño
             es_seleccionado = (t == st.session_state.seleccionado)
             
             with st.container(border=True):
                 c1, c2, c3 = st.columns([1.1, 1, 0.9])
                 with c1:
-                    # Transformamos el nombre del Ticker en un botón interactivo para cambiar el enfoque
                     label_boton = f"🎯 {t}" if es_seleccionado else f"{t}"
                     if st.button(label_boton, key=f"btn_{t}", use_container_width=True):
                         st.session_state.seleccionado = t
@@ -183,7 +163,7 @@ with col_izq:
                     st.caption(data["senal"])
                 with c2:
                     st.metric(
-                        label="Precio Actual (24h)", 
+                        label="Precio en Vivo", 
                         value=f"${data['precio']:.2f}", 
                         delta=f"{data['cambio']:.2f}%"
                     )
@@ -192,7 +172,7 @@ with col_izq:
                     st.markdown(f"**RSI (1m):** {data['rsi']}")
                     st.progress(data["rsi"] / 100)
 
-# --- COLUMNA DERECHA: ENFOQUE TÁCTICO APALANCADO (ACCION SELECCIONADA) ---
+# --- COLUMNA DERECHA: ENFOQUE TÁCTICO APALANCADO ---
 with col_der:
     seleccionado_actual = st.session_state.seleccionado
     st.markdown(f"### 🔍 Ejecución de Orden Corta: {seleccionado_actual}")
@@ -201,7 +181,7 @@ with col_der:
     if main:
         with st.container(border=True):
             st.header(f"📊 {seleccionado_actual} — ${main['precio']:.2f}")
-            st.metric(label="Último Precio Registrado", value=f"${main['precio']:.2f}", delta=f"{main['cambio']:.2f}%")
+            st.metric(label="Último Precio de Vela", value=f"${main['precio']:.2f}", delta=f"{main['cambio']:.2f}%")
             
             st.info(f"**{main['senal']}**\n\n{main['nota']}")
             
@@ -222,21 +202,15 @@ with col_der:
             
             st.markdown("---")
             
-            st.markdown("**Rango de oscilación del precio (Histórico anual):**")
+            st.markdown("**Rango de oscilación del precio en esta sesión:**")
             st.slider(
-                label="Rango de Volatilidad (Mín / Máx 52 Semanas)",
+                label="Rango de Volatilidad Reciente",
                 min_value=main["min_5d"],
                 max_value=main["max_5d"],
                 value=main["precio"],
                 disabled=True
             )
 
-        with st.expander("📚 CONSEJOS DE CONTROL DE DAÑOS (APALANCAMIENTO)", expanded=True):
-            st.markdown("""
-            * **Interactividad en un clic:** Ahora puedes pulsar directamente sobre las siglas de cualquier acción en el panel izquierdo (ej. el botón de `IONQ`) para actualizar esta columna al instante sin usar el menú lateral.
-            * **Mercado Nocturno:** Recuerda vigilar el spread en eToro durante las horas Overnight, ya que la volatilidad suele ser mayor al haber menos volumen negociado.
-            """)
-
-# --- 🔄 BUCLE DE ACTUALIZACIÓN AUTOMÁTICA EN SEGUNDO PLANO ---
+# --- 🔄 BUCLE DE REFRESCO AUTOMÁTICO ---
 time.sleep(15)
 st.rerun()
