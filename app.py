@@ -21,7 +21,7 @@ if "tickers" not in st.session_state:
     st.session_state.tickers = [
         "VRT", "ANET", "NVDA", "AMD", "MU", 
         "ARM", "QCOM", "TSLA", "GOOG", "RKLB", 
-        "SMCI", "CEL", "BTC/USD"
+        "SMCI", "BTC/USD"
     ]
 
 if "seleccionado" not in st.session_state:
