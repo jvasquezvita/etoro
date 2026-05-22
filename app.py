@@ -235,9 +235,9 @@ with col_orden:
             st.success(f"🏆 TARGET: ${main['target']:.2f}")
             
             with st.expander("📘 Info Colores", expanded=False):
-                st.markdown("""
-                * **🟢 Verde ($\leq$ 32):** Sobreventa (Compra).
-                * **🔴 Rojo ($\geq$ 68):** Sobrecompra (Short).
+                st.markdown(r"""
+                * **🟢 Verde (RSI <= 32):** Sobreventa (Compra).
+                * **🔴 Rojo (RSI >= 68):** Sobrecompra (Short).
                 * **🟡 Gris (33-67):** Zona Neutral.
                 """)
                 
