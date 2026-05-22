@@ -3,6 +3,8 @@ import yfinance as yf
 import pandas as pd
 import streamlit as st
 import time
+import requests
+import re
 
 # 1. Configuración de la página estilo Terminal de Trading
 st.set_page_config(
@@ -15,30 +17,51 @@ st.set_page_config(
 if "tickers" not in st.session_state:
     st.session_state.tickers = ["NVDA", "SMCI", "RKLB", "AMD", "VRT", "ANET", "MU", "QCOM", "IONQ"]
 
-# Inicializar la acción que está en enfoque en el panel derecho
 if "seleccionado" not in st.session_state:
     st.session_state.seleccionado = st.session_state.tickers[0] if st.session_state.tickers else None
 
-# 3. Función de extracción ligera para evitar bloqueos de Yahoo Finance
+# NUEVA FUNCIÓN: Raspador directo de respaldo para obtener el precio real instantáneo sin usar la API congelada
+def obtener_precio_tiempo_real_directo(ticker_symbol):
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker_symbol}?interval=1m&range=1d"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        response = requests.get(url, headers=headers, timeout=5)
+        data = response.json()
+        
+        # Extraer el último precio del flujo en tiempo real (incluye pre/post mercado si está disponible)
+        meta = data['chart']['result'][0]['meta']
+        precio = meta.get('regularMarketPrice')
+        
+        # Si estamos fuera de horario, intentar capturar el precio extendido actual
+        df_result = data['chart']['result'][0]['indicators']['quote'][0]['close']
+        if df_result and len(df_result) > 0 and df_result[-1] is not None:
+            precio = float(df_result[-1])
+            
+        return precio
+    except:
+        return None
+
+# 3. Función de extracción ligera combinada
 def obtener_datos_ticker(ticker_symbol):
     try:
         ticker = yf.Ticker(ticker_symbol)
         
-        # Extracción segura mediante historial con mercado extendido (Overnight / Afterhours)
-        # Eliminamos .info para evitar que Yahoo congele o bloquee tus peticiones
-        df = ticker.history(period="3d", interval="1m", prepost=True) 
+        # Intentar obtener el precio ultra fresco usando nuestra nueva función directa
+        precio_actual = obtener_precio_tiempo_real_directo(ticker_symbol)
         
-        # SISTEMA FALLBACK: Si no hay datos de 1 minuto, bajamos resolución
-        if df.empty or len(df) < 15:
-            df = ticker.history(period="5d", interval="15m", prepost=True)
-            if df.empty:
-                df = ticker.history(period="1mo", interval="1d")
+        # Descargamos el historial únicamente para calcular el RSI y las Medias Móviles
+        df = ticker.history(period="5d", interval="15m", prepost=True) 
+
+        if df.empty:
+            df = ticker.history(period="1mo", interval="1d")
 
         if df.empty:
             return None
 
-        # Obtenemos el precio "Live" del último segundo registrado en la vela actual
-        precio_actual = float(df["Close"].iloc[-1])
+        # Si nuestra función directa falló, usamos el último cierre de la vela como plan de respaldo
+        if not precio_actual:
+            precio_actual = float(df["Close"].iloc[-1])
+            
         precio_anterior = float(df["Close"].iloc[-2]) if len(df) > 1 else precio_actual
         cambio_pct = float(((precio_actual - precio_anterior) / precio_anterior) * 100)
 
@@ -56,9 +79,13 @@ def obtener_datos_ticker(ticker_symbol):
         window_size = min(50, len(df))
         sma_50 = float(df["Close"].rolling(window=window_size).mean().iloc[-1])
         
-        # Rangos mínimos y máximos del dataframe actual para evitar colapsos de la barra
+        # Rangos mínimos y máximos para el slider de volatilidad
         min_periodo = float(df["Low"].min())
         max_periodo = float(df["High"].max())
+
+        # Ajuste preventivo para que el slider no falle si el precio actual se sale por el pre-mercado
+        if precio_actual < min_periodo: min_periodo = precio_actual * 0.99
+        if precio_actual > max_periodo: max_periodo = precio_actual * 1.01
 
         # RECOMENDACIÓN TÁCTICA INTRADÍA
         if rsi_actual <= 35:
@@ -66,7 +93,7 @@ def obtener_datos_ticker(ticker_symbol):
             nota = f"RSI en sobreventa rápida ({rsi_actual}). Excelente ventana si el precio coquetea con el soporte."
         elif rsi_actual >= 65:
             senal = "🔴 VENTA / RECOGER GANANCIAS"
-            nota = f"RSI en sobrecompra ({rsi_actual}). Riesgo alto de retroceso técnico inmediato. Protege capital."
+            nota = f"RSI en sobrecompra ({rsi_actual}). Riesgo alto de retroceso técnico inmediato."
         else:
             senal = "🟡 MONITORIZAR"
             nota = f"Precio en equilibrio en gráfico rápido (RSI: {rsi_actual}). Esperar aproximación a zonas clave."
@@ -138,8 +165,8 @@ else:
 
 
 # --- INTERFAZ GRÁFICA PRINCIPAL ---
-st.title("⚡ AI Day Trading Scalper Dashboard (Live 24h)")
-st.caption(f"Actualización del flujo: Cada 15s sin bloqueos — Sincronización del sistema: {datetime.datetime.now().strftime('%H:%M:%S')}")
+st.title("⚡ AI Day Trading Scalper Dashboard (Live Bypass)")
+st.caption(f"Actualización del flujo: Forzado en vivo mediante consulta JSON directa — Sincronización: {datetime.datetime.now().strftime('%H:%M:%S')}")
 st.markdown("---")
 
 col_izq, col_der = st.columns([1.1, 1])
@@ -169,7 +196,7 @@ with col_izq:
                     )
                 with c3:
                     st.markdown(f"**Soporte:** ${data['soporte']:.2f}")
-                    st.markdown(f"**RSI (1m):** {data['rsi']}")
+                    st.markdown(f"**RSI (15m):** {data['rsi']}")
                     st.progress(data["rsi"] / 100)
 
 # --- COLUMNA DERECHA: ENFOQUE TÁCTICO APALANCADO ---
@@ -181,7 +208,7 @@ with col_der:
     if main:
         with st.container(border=True):
             st.header(f"📊 {seleccionado_actual} — ${main['precio']:.2f}")
-            st.metric(label="Último Precio de Vela", value=f"${main['precio']:.2f}", delta=f"{main['cambio']:.2f}%")
+            st.metric(label="Último Precio Detectado", value=f"${main['precio']:.2f}", delta=f"{main['cambio']:.2f}%")
             
             st.info(f"**{main['senal']}**\n\n{main['nota']}")
             
@@ -210,6 +237,11 @@ with col_der:
                 value=main["precio"],
                 disabled=True
             )
+
+        with st.expander("📚 CONSEJOS DE CONTROL DE DAÑOS (APALANCAMIENTO)", expanded=True):
+            st.markdown("""
+            * **Bypass Exitoso:** Este código incluye la función `obtener_precio_tiempo_real_directo()`, la cual se salta la API estándar de descarga histórica de Yahoo y extrae directamente los paquetes JSON rápidos que alimentan los gráficos de su web principal.
+            """)
 
 # --- 🔄 BUCLE DE REFRESCO AUTOMÁTICO ---
 time.sleep(15)
