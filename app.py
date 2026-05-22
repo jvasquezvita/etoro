@@ -21,7 +21,7 @@ if "tickers" not in st.session_state:
     st.session_state.tickers = [
         "VRT", "ANET", "NVDA", "AMD", "MU", 
         "ARM", "QCOM", "TSLA", "GOOG", "RKLB", 
-        "SMCI", "BTC/USD"
+        "SMCI", "CEL", "BTC/USD"
     ]
 
 if "seleccionado" not in st.session_state:
@@ -173,3 +173,77 @@ col_izq, col_der = st.columns([1.1, 1])
 
 # --- COLUMNA IZQUIERDA: MONITOR DE SCALPING INTERACTIVO ---
 with col_izq:
+    st.markdown("### 📋 Monitor de Scalping Activo (Haz clic para cambiar enfoque)")
+    
+    for t in st.session_state.tickers:
+        data = obtener_datos_ticker(t)
+        if data:
+            es_seleccionado = (t == st.session_state.seleccionado)
+            
+            with st.container(border=True):
+                c1, c2, c3 = st.columns([1.1, 1, 0.9])
+                with c1:
+                    label_boton = f"🎯 {t}" if es_seleccionado else f"{t}"
+                    if st.button(label_boton, key=f"btn_{t}", use_container_width=True):
+                        st.session_state.seleccionado = t
+                        st.rerun()
+                    st.caption(data["senal"])
+                with c2:
+                    st.metric(
+                        label="Precio Actual", 
+                        value=f"${data['precio']:.2f}", 
+                        delta=f"{data['cambio']:.2f}%"
+                    )
+                with c3:
+                    st.markdown(f"**Soporte:** ${data['soporte']:.2f}")
+                    st.markdown(f"**RSI:** {data['rsi']}")
+                    st.progress(data["rsi"] / 100)
+
+# --- COLUMNA DERECHA: ENFOQUE TÁCTICO APALANCADO ---
+with col_der:
+    seleccionado_actual = st.session_state.seleccionado
+    st.markdown(f"### 🔍 Ejecución de Orden Corta: {seleccionado_actual}")
+    main = obtener_datos_ticker(seleccionado_actual)
+    
+    if main:
+        with st.container(border=True):
+            st.header(f"📊 {seleccionado_actual} — ${main['precio']:.2f}")
+            st.metric(label="Precio del Activo", value=f"${main['precio']:.2f}", delta=f"{main['cambio']:.2f}%")
+            
+            st.info(f"**{main['senal']}**\n\n{main['nota']}")
+            
+            st.markdown("#### 🚨 Parámetros de Configuración Obligatoria para eToro (x5 / x10)")
+            
+            met1, met2, met3 = st.columns(3)
+            with met1:
+                st.metric(label="🎯 Entrada Óptima (Soporte)", value=f"${main['soporte']:.2f}")
+            with met2:
+                st.metric(label="🛑 Stop Loss Recomendado", value=f"${main['stop_loss']:.2f}")
+            with met3:
+                st.metric(label="🏆 Target de Salida Corto", value=f"${main['target']:.2f}")
+            
+            st.markdown("---")
+            
+            st.markdown(f"**RSI Inmediato:** {main['rsi']} / 100")
+            st.progress(main["rsi"] / 100)
+            
+            st.markdown("---")
+            
+            st.markdown("**Rango de oscilación del precio en esta sesión:**")
+            st.slider(
+                label="Rango de Volatilidad Reciente",
+                min_value=main["min_5d"],
+                max_value=main["max_5d"],
+                value=main["precio"],
+                disabled=True
+            )
+
+        with st.expander("📚 NOTA DE CONTROL OPERATIVO", expanded=True):
+            st.markdown(f"""
+            * **Lista reorganizada:** El orden de visualización de las tarjetas se ha congelado exactamente según tu especificación iniciando en `VRT` y cerrando con `BTC/USD`.
+            * **Acción actual en foco:** El panel derecho está ejecutando los parámetros tácticos para **{seleccionado_actual}**.
+            """)
+
+# --- 🔄 BUCLE DE REFRESCO AUTOMÁTICO ---
+time.sleep(15)
+st.rerun()
